@@ -1,4 +1,4 @@
-Marketing Mix Modeling (MMM) — Leakage-Safe OLS Case Study
+#Marketing Mix Modeling (MMM) — Leakage-Safe OLS Case Study
 
 Project type: End-to-end weekly Marketing Mix Modeling and budget optimization
 
