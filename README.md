@@ -1,873 +1,979 @@
-#Marketing Mix Modeling (MMM) — Leakage-Safe OLS Case Study
+# 📊 Marketing Mix Modeling (MMM) — Leakage-Safe OLS Case Study
 
-Project type: End-to-end weekly Marketing Mix Modeling and budget optimization
+<p align="center">
+  <strong>End-to-End Weekly MMM • Leakage-Safe Validation • ROAS • Response Curves • Budget Optimization</strong>
+</p>
 
-Modeling framework: OLS MMM with leakage-safe transformations, chronological rolling cross-validation, untouched final holdout validation, contribution decomposition, ROAS analysis, response curves, and fixed-budget optimization
+<p align="center">
+  <img alt="Python" src="https://img.shields.io/badge/Python-3.x-3776AB?logo=python&logoColor=white">
+  <img alt="Model" src="https://img.shields.io/badge/Model-OLS%20MMM-1f6feb">
+  <img alt="Validation" src="https://img.shields.io/badge/Validation-Time%20Series-6f42c1">
+  <img alt="Optimization" src="https://img.shields.io/badge/Optimization-SLSQP-2ea44f">
+  <img alt="Currency" src="https://img.shields.io/badge/Currency-INR%20₹-ff9800">
+  <img alt="Status" src="https://img.shields.io/badge/Status-Finalized-success">
+</p>
 
-Notebook: MMM_Leakage_Safe_Case_Study_Finalized.ipynb
+> **Executive takeaway:** This project converts weekly media, sales, promotion, price, trend, and seasonality data into a leakage-safe OLS Marketing Mix Model. After chronological tuning and untouched holdout validation, the locked specification is refit on all history for business attribution and planning. The final budget optimizer reallocates the historical average weekly media budget across **Print, TV, Meta, Instagram, and YouTube**, while accounting for media carryover, diminishing returns, and explicit extrapolation limits.
 
-Primary planning unit: Weekly
+---
 
-Media families: Print, TV, Meta, Instagram, YouTube
+## 🧭 Table of Contents
 
-Target variable: Sales_Volume_kgs
+* [1. Project at a Glance](#1-project-at-a-glance)
+* [2. Business Questions](#2-business-questions)
+* [3. Why This MMM Is Leakage-Safe](#3-why-this-mmm-is-leakage-safe)
+* [4. End-to-End Architecture](#4-end-to-end-architecture)
+* [5. Data Inputs](#5-data-inputs)
+* [6. Media-Family Structure](#6-media-family-structure)
+* [7. Data Preparation & Quality Controls](#7-data-preparation--quality-controls)
+* [8. Media Transformation Pipeline](#8-media-transformation-pipeline)
+* [9. OLS MMM Specification](#9-ols-mmm-specification)
+* [10. Time-Series Validation](#10-time-series-validation)
+* [11. Historical Attribution & Contribution](#11-historical-attribution--contribution)
+* [12. Incremental Sales, Revenue & ROAS](#12-incremental-sales-revenue--roas)
+* [13. Response Curves](#13-response-curves)
+* [14. Budget Optimization](#14-budget-optimization)
+* [15. Spend-to-Input Bridge](#15-spend-to-input-bridge)
+* [16. Optimization Objective & Constraints](#16-optimization-objective--constraints)
+* [17. Finalized Budget Result](#17-finalized-budget-result)
+* [18. Diagnostics & Model Governance](#18-diagnostics--model-governance)
+* [19. Generated Outputs](#19-generated-outputs)
+* [20. Project Structure](#20-project-structure)
+* [21. How to Run](#21-how-to-run)
+* [22. Dependencies](#22-dependencies)
+* [23. Key Notebook Objects](#23-key-notebook-objects)
+* [24. Assumptions](#24-assumptions)
+* [25. Limitations](#25-limitations)
+* [26. Recommended Enhancements](#26-recommended-enhancements)
+* [27. Reproducibility Checklist](#27-reproducibility-checklist)
+* [28. Business Presentation Framework](#28-business-presentation-framework)
+* [29. Final Interpretation](#29-final-interpretation)
+* [30. Deliverables](#30-deliverables)
 
-Revenue field: Sales_Value_INR
+---
 
-Currency: INR (₹)
+# 1. 📌 Project at a Glance
 
-1. Executive Summary
+| Item                          | Description                                                    |
+| ----------------------------- | -------------------------------------------------------------- |
+| **Project type**              | End-to-end weekly Marketing Mix Modeling + budget optimization |
+| **Model family**              | Leakage-safe OLS MMM                                           |
+| **Time granularity**          | Weekly                                                         |
+| **Primary target**            | `Sales_Volume_kgs`                                             |
+| **Revenue field**             | `Sales_Value_INR`                                              |
+| **Price control**             | `AVG_Price_Per_kgs`                                            |
+| **Media families**            | Print, TV, Meta, Instagram, YouTube                            |
+| **Carryover**                 | Geometric adstock                                              |
+| **Nonlinearity**              | Zero-anchored logistic saturation                              |
+| **Validation**                | Chronological rolling CV + untouched final holdout             |
+| **Historical business model** | Full-history refit after validation gate                       |
+| **Optimization**              | Fixed-budget constrained allocation using SLSQP                |
+| **Planning currency**         | INR (₹)                                                        |
+| **Primary notebook**          | `MMM_Leakage_Safe_Case_Study_Finalized.ipynb`                  |
 
-This project builds a full Marketing Mix Model (MMM) for a consumer brand using weekly sales, media inputs, media spend, promotion, price, trend, and seasonality data.
+## 🎯 Project Outcome
 
-The central technical objective is to prevent validation leakage. In a time-series MMM, leakage can happen even when the regression itself is trained only on historical observations: transformation parameters such as scaling references, saturation parameters, and price-centering values can accidentally be learned using future observations. This project explicitly prevents that by fitting learned quantities only on the appropriate training period and applying the frozen parameters forward in time.
+The notebook is designed to move from raw weekly business data to four practical outputs:
 
-The modeling workflow has four major layers:
+1. **Model credibility** — leakage-safe transformations and genuine out-of-sample validation.
+2. **Business attribution** — weekly/fiscal-year media contribution, incremental sales, revenue, and ROAS.
+3. **Response understanding** — adstock, saturation, and modeled response curves.
+4. **Budget planning** — a model-implied allocation of a fixed weekly media budget across five media families.
 
-Data preparation — ingest, clean, validate, align, and merge the weekly source datasets.
+---
 
-Leakage-safe MMM construction — scale media, aggregate media families, create controls, add Fourier seasonality, apply geometric adstock, apply zero-anchored logistic saturation, tune transformations with chronological rolling cross-validation, and fit an OLS model.
+# 2. 💼 Business Questions
 
-Business decomposition — use the locked full-history historical refit to estimate media contributions, incremental sales, incremental revenue, ROAS, and response curves.
+The project is structured to answer:
 
-Budget optimization — convert weekly spend into modeled response using a historical spend-to-input bridge and optimize the allocation of a fixed total budget across the five media families while accounting for adstock, saturation, and the fitted OLS response.
+* How do media, promotions, price, trend, and seasonality relate to weekly sales?
+* How much incremental sales volume is associated with each media family under the fitted model?
+* How much incremental revenue is associated with each media family?
+* What is historical ROAS by media family and fiscal year?
+* Where do modeled response curves indicate diminishing returns?
+* Given a fixed total weekly media budget, what allocation maximizes **modeled incremental media revenue** under the notebook's constraints?
 
-The final budget recommendation is explicitly model-implied. It is a planning output derived from the fitted MMM, not a guaranteed causal outcome.
+> **Important:** Budget optimization is an allocation exercise based on the fitted model. It is a planning scenario, not a guarantee of future causal lift.
 
-2. Business Objective
+---
 
-The project is designed to answer the following business questions:
+# 3. 🔐 Why This MMM Is Leakage-Safe
 
-How do media, promotions, price, trend, and seasonality relate to weekly sales?
+## The Core Principle
 
-How much incremental sales volume is attributed to each media family under the fitted model?
+> **Validation leakage is a pipeline problem, not only a regression-training problem.**
 
-What incremental revenue does the model associate with each media family?
+In a time-series MMM, leakage can occur when future observations influence learned preprocessing parameters such as scaling references, price-centering values, or saturation statistics.
 
-What is the historical ROAS by media family and fiscal year?
+The notebook explicitly prevents this.
 
-How does modeled response change as spend increases?
+| Pipeline Component        | Leakage-Safe Treatment                                                   |
+| ------------------------- | ------------------------------------------------------------------------ |
+| **Media scaling**         | Learned from the first 80% outer-training period and frozen forward.     |
+| **Trend**                 | Deterministic origin from the first observed week.                       |
+| **Price centering**       | Training-referenced; inner CV uses fold-specific training means.         |
+| **Adstock**               | Recursive and causal; uses current and prior media only.                 |
+| **Saturation**            | Reference statistics learned only from relevant training rows.           |
+| **Transformation tuning** | Performed with chronological rolling validation inside development data. |
+| **Final holdout**         | Final 20% remains untouched during tuning and development-model fitting. |
+| **Historical refit**      | Performed only after the validation gate for attribution/planning.       |
 
-Given a fixed total weekly media budget, how should spend be reallocated across media families to maximize modeled incremental media revenue?
+## Development Model vs. Historical Refit
 
-The final optimization is deliberately framed as an allocation problem rather than a simple historical-ROAS ranking. Historical ROAS is an average efficiency statistic; a forward allocation problem must recognize diminishing returns. The optimizer therefore evaluates the modeled response curve at different spend levels and searches for the allocation that maximizes modeled incremental media revenue subject to explicit constraints.
+The notebook intentionally separates two purposes.
 
-3. Core Technical Story: Validation Leakage as a Pipeline Problem
+### Development / Validation Model
 
-The most important methodological principle in the notebook is:
+Used to make the genuine out-of-sample claim on the final holdout.
 
-Validation leakage is not only a regression-training problem; it can occur anywhere a learned transformation uses future observations.
+### Full-History Historical Refit
 
-The project addresses the main leakage paths as follows:
+Used after validation for:
 
-Pipeline component
+* contribution decomposition;
+* ROAS;
+* response curves;
+* incremental revenue;
+* budget optimization.
 
-Leakage control
+This distinction should be preserved in any business presentation of the results.
 
-Media-family scaling
+---
 
-Scaling references are learned from the first 80% outer-training period and then frozen.
+# 4. 🏗️ End-to-End Architecture
 
-Trend
+```text
+                    ┌──────────────────────────────┐
+                    │       Weekly Source Data     │
+                    ├──────────────────────────────┤
+                    │ Sales                         │
+                    │ Media Inputs                  │
+                    │ Media Spend                   │
+                    │ Promotion / Trade Promotion  │
+                    └──────────────┬───────────────┘
+                                   │
+                                   ▼
+                    ┌──────────────────────────────┐
+                    │ Data Cleaning & Alignment    │
+                    │ • dates / weeks              │
+                    │ • numeric coercion           │
+                    │ • duplicate checks           │
+                    │ • coverage checks            │
+                    └──────────────┬───────────────┘
+                                   │
+                                   ▼
+                    ┌──────────────────────────────┐
+                    │ Leakage-Safe Modeling Base   │
+                    │ • family aggregation         │
+                    │ • training-only scaling      │
+                    │ • price control              │
+                    │ • trend / seasonality        │
+                    └──────────────┬───────────────┘
+                                   │
+                                   ▼
+                ┌─────────────────────────────────────┐
+                │ Media Transformation + Tuning       │
+                │ Input → Adstock → Saturation        │
+                │ Chronological rolling validation    │
+                └──────────────────┬──────────────────┘
+                                   │
+                                   ▼
+                    ┌──────────────────────────────┐
+                    │ OLS MMM + Holdout Validation │
+                    └──────────────┬───────────────┘
+                                   │
+                    ┌──────────────┼──────────────┐
+                    ▼              ▼              ▼
+              Contribution       ROAS       Response Curves
+                    │              │              │
+                    └──────────────┼──────────────┘
+                                   ▼
+                    ┌──────────────────────────────┐
+                    │ Budget Optimization          │
+                    │ Spend → Input → Adstock      │
+                    │ → Saturation → Revenue       │
+                    └──────────────┬───────────────┘
+                                   │
+                                   ▼
+                    ┌──────────────────────────────┐
+                    │ FINAL BUDGET ALLOCATION      │
+                    │ Weekly + 52-week annualized  │
+                    └──────────────────────────────┘
+```
 
-Trend uses the first observed week as a deterministic origin rather than a full-sample centering statistic.
+---
 
-Price centering
+# 5. 🗂️ Data Inputs
 
-The price reference is learned from the outer training period; inner CV uses a fold-specific training mean.
+The finalized notebook expects four source CSV files in the same directory as the notebook, or in `/mnt/data` in the supplied execution environment.
 
-Adstock
+## Required Files
 
-Recursive adstock is causal: each week uses current and prior media values only.
-
-Saturation
-
-Saturation reference statistics are learned only from the relevant training rows.
-
-Adstock/saturation tuning
-
-Parameters are selected using chronological rolling validation inside the development period.
-
-Final holdout
-
-The final 20% of observations remains untouched during tuning and development-model fitting.
-
-Historical refit
-
-The all-history refit is performed only after the validation gate and is used for historical attribution/business analysis, not for claiming out-of-sample performance.
-
-This distinction is essential: the full-history model is useful for historical contribution, ROAS, response curves, and budget planning, but it is not the basis for the notebook's genuine out-of-sample validation claim.
-
-4. Data Inputs
-
-The finalized notebook expects four CSV files in the same folder as the notebook, or in /mnt/data when running in the supplied environment.
-
-Required input files
-
+```text
 Consumer Brand_Soap_Sales.csv
 Consumer Brand_Media_Input.csv
 Consumer Brand_Media_Spends.csv
 Consumer Brand_Soap_Promo.csv
+```
 
-4.1 Sales data
+## 5.1 Sales Data
 
-The sales source provides the response and revenue information used by the MMM and downstream business analysis.
+Primary fields include:
 
-Key fields used in the notebook include:
+* `Week`
+* `Week_Start`
+* `Sales_Volume_kgs`
+* `Sales_Value_INR`
+* `AVG_Price_Per_kgs`
 
-Week
+**Model target:** `Sales_Volume_kgs`
 
-Week_Start
+**Revenue translation:** `Sales_Value_INR`
 
-Sales_Volume_kgs
+**Price control:** `AVG_Price_Per_kgs`
 
-Sales_Value_INR
+## 5.2 Media Input Data
 
-AVG_Price_Per_kgs
+Contains campaign/activity variables that are mapped into five media families before transformation.
 
-Sales_Volume_kgs is the OLS target variable.
+## 5.3 Media Spend Data
 
-Sales_Value_INR is the actual sales-value field used for revenue translation.
+Preserved separately for:
 
-AVG_Price_Per_kgs is retained as a price control and is mean-centered using a training-referenced value before modeling.
+* spend-based business reporting;
+* ROAS calculation;
+* budget optimization.
 
-4.2 Media input data
+## 5.4 Promotion Data
 
-The media-input source contains campaign/activity variables. The notebook maps these campaign variables into five media families.
+Promotion and trade-promotion variables are carried into the modeling base alongside other non-media controls.
 
-4.3 Media spend data
+---
 
-The media-spend source is preserved separately from the response/input dataset so that spend is available for ROAS and budget optimization.
+# 6. 📡 Media-Family Structure
 
-Spend is aggregated into the same five media families used by the MMM.
+The notebook standardizes campaign-level variables into five business-friendly media families.
 
-4.4 Promotion data
+## Print
 
-Promotion and trade-promotion variables are carried into the modeling base and later treated as controls alongside price, trend, holiday variables, and seasonality.
+* `Print_Gentle_Start`
+* `Print_Moms_Trust`
 
-5. Media-Family Structure
+## TV
 
-The notebook uses the following campaign-to-family mapping.
+* `TV_Classic_Care_15s`
+* `TV_Apollo_Gentle_Bath_20s`
+* `TV_Motherbrand_Safest_Touch_15s`
+* `TV_Soap_Core_Rejuvenate_15s`
 
-Print
+## Meta
 
-Print_Gentle_Start
+* `Meta_First_Touch_Reach`
+* `Meta_Gentle_Bath_Video`
+* `Meta_Moms_Trust_Retargeting`
 
-Print_Moms_Trust
+## Instagram
 
-TV
+* `Instagram_Baby_Bath_Reels`
+* `Instagram_Mom_Creator_Stories`
+* `Instagram_Gentle_Skin_Carousel`
 
-TV_Classic_Care_15s
+## YouTube
 
-TV_Apollo_Gentle_Bath_20s
+* `YouTube_Safest_Touch_15s`
+* `YouTube_Gentle_Bath_20s`
+* `YouTube_Mom_Stories_30s`
+* `YouTube_Soap_Core_Bumper_6s`
 
-TV_Motherbrand_Safest_Touch_15s
+## Family Aggregation Logic
 
-TV_Soap_Core_Rejuvenate_15s
+Campaigns inside the same family are summed weekly before the main MMM transformations.
 
-Meta
+Example:
 
-Meta_First_Touch_Reach
-
-Meta_Gentle_Bath_Video
-
-Meta_Moms_Trust_Retargeting
-
-Instagram
-
-Instagram_Baby_Bath_Reels
-
-Instagram_Mom_Creator_Stories
-
-Instagram_Gentle_Skin_Carousel
-
-YouTube
-
-YouTube_Safest_Touch_15s
-
-YouTube_Gentle_Bath_20s
-
-YouTube_Mom_Stories_30s
-
-YouTube_Soap_Core_Bumper_6s
-
-For each week, the campaigns inside a family are summed into a family-level total before the main MMM transformations.
-
-For example:
-
+```text
 Meta_t =
     Meta_First_Touch_Reach_t
   + Meta_Gentle_Bath_Video_t
   + Meta_Moms_Trust_Retargeting_t
+```
 
-The same family structure is then reused for spend aggregation, contribution, ROAS, response curves, and budget optimization so that the business outputs stay aligned with the modeling variables.
+The same family definitions are reused for:
 
-6. Data Preparation and Quality Controls
+* modeling;
+* spend aggregation;
+* contribution decomposition;
+* ROAS;
+* response curves;
+* budget optimization.
 
-The notebook starts by standardizing the input data before modeling.
+This keeps the analytical layer and business planning layer aligned.
 
-Numeric and date handling
+---
 
-Week is converted to numeric.
+# 7. 🧹 Data Preparation & Quality Controls
 
-Week_Start is converted to a date using dayfirst=True.
+The data-preparation layer standardizes weekly sources before modeling.
 
-Other numeric columns are converted using numeric coercion after removing common formatting artifacts such as commas and placeholder values.
+## Date and Numeric Handling
 
-Column names are stripped and standardized.
+* `Week` is converted to numeric.
+* `Week_Start` is converted to date using `dayfirst=True`.
+* Numeric fields are coerced after common formatting cleanup.
+* Column names are stripped/standardized.
 
-Weekly integrity checks
+## Weekly Integrity Checks
 
-The notebook verifies:
+The notebook checks:
 
-required time fields exist in every dataset;
+* required time fields exist;
+* chronological ordering is valid;
+* duplicate weeks are absent;
+* week-to-date mappings are consistent;
+* source week coverage is aligned;
+* master data does not contain unexpected missing values;
+* media spend aligns to the MMM weeks used downstream.
 
-weeks are sorted chronologically;
+---
 
-duplicate week values are not present;
+# 8. 🔄 Media Transformation Pipeline
 
-a week maps to a consistent Week_Start value;
+The MMM uses the following sequence:
 
-week coverage is compared across sales, media input, media spend, and promotion datasets;
+```text
+Raw Media Input
+      │
+      ▼
+Leakage-Safe Scaling
+      │
+      ▼
+Geometric Adstock
+      │
+      ▼
+Zero-Anchored Logistic Saturation
+      │
+      ▼
+OLS Media Coefficient
+      │
+      ▼
+Modeled Incremental Sales
+      │
+      ▼
+Revenue Translation
+```
 
-merged master data does not contain unexpected missing values;
+---
 
-media spend aligns with the MMM weeks used downstream.
+## 8.1 Leakage-Safe Media Scaling
 
-The master MMM dataset combines sales, media inputs, and promotion data, while media spend is retained separately for ROAS analysis.
+Media variables may live on very different numerical scales.
 
-7. Media Scaling
+The notebook learns scaling references using only the first **80% chronological outer-training period**, then freezes those references.
 
-Media campaigns can exist on very different numerical scales. To make the family-level modeling variables numerically comparable, the notebook performs leakage-safe scaling.
+This ensures future holdout observations cannot alter the transformation used by the model.
 
-The key rule is that the scaling references are learned from the first 80% of the chronological observations only.
+---
 
-The notebook also retains full-period maxima for descriptive inspection, but those full-period statistics are not used to learn the modeling transformation.
+## 8.2 Geometric Adstock
 
-This prevents future holdout observations from changing the scale used by the model.
+Media effects can persist after the original media activity occurs.
 
-8. Modeling Base
+The notebook applies geometric carryover:
 
-The modeling base contains:
-
-weekly sales volume;
-
-training-referenced price;
-
-five family-level media inputs;
-
-available promotion and trade-promotion variables;
-
-holiday variables when present;
-
-deterministic time trend;
-
-Fourier seasonality terms.
-
-Trend
-
-The time trend is based on the first observed week:
-
-Trend = Week - first observed Week
-
-This avoids using a full-sample mean or other future-dependent centering quantity.
-
-Fiscal-year convention
-
-The notebook labels calendar years as:
-
-2023 -> FY23
-2024 -> FY24
-2025 -> FY25
-
-The original Week_Start date is preserved so the fiscal-year convention can be changed later if the business uses a non-calendar fiscal year.
-
-9. Seasonality: Fourier Terms
-
-Weekly sales can contain recurring annual patterns that are unrelated to media activity. The notebook uses Fourier terms as a compact seasonal representation.
-
-The principal annual seasonality representation uses a sine/cosine pair, with the model using the available Fourier_Sin_1 and Fourier_Cos_1 variables when those columns are present.
-
-Fourier terms are deterministic functions of time. Their inclusion should still be judged through training-period validation rather than by optimizing against the final holdout.
-
-10. Media Carryover: Geometric Adstock
-
-MMM media effects often persist beyond the week in which activity occurs. The notebook models this carryover using geometric cumulative adstock:
-
-[
-Adstock_t = x_t + \alpha \cdot Adstock_{t-1}
-]
+$$
+Adstock_t = x_t + \alpha Adstock_{t-1}
+$$
 
 where:
 
-x_t = current week's media input;
+* \(x_t\) = current-week media input;
+* \(\alpha\) = retention/decay parameter;
+* \(Adstock_t\) = carryover-adjusted media level.
 
-alpha = retention/decay parameter;
+Baseline family-level alpha values are:
 
-Adstock_t = current week's carryover-adjusted media level.
+| Media Family | Alpha |
+| ------------ | ----: |
+| Print        |  0.40 |
+| TV           |  0.65 |
+| Meta         |  0.30 |
+| Instagram    |  0.25 |
+| YouTube      |  0.40 |
 
-Baseline adstock parameters
+The half-life relationship is:
 
-The notebook defines initial family-level values as:
-
-Media family
-
-Alpha
-
-Print
-
-0.40
-
-TV
-
-0.65
-
-Meta
-
-0.30
-
-Instagram
-
-0.25
-
-YouTube
-
-0.40
-
-These values are used as initial/modeling parameters in the pipeline, with transformation tuning subsequently performed using chronological validation.
-
-The corresponding half-life is calculated as:
-
-[
+$$
 Half\ Life = \frac{\log(0.5)}{\log(\alpha)}
-]
+$$
 
-Adstock is causal: the calculation for week t never uses future media activity.
+Adstock is causal: week `t` uses current and prior media activity only.
 
-11. Nonlinear Response: Zero-Anchored Logistic Saturation
+---
 
-To represent diminishing returns, the notebook applies logistic saturation after adstock.
+## 8.3 Zero-Anchored Logistic Saturation
 
-A standard logistic curve has a positive value at zero input when its midpoint is positive. That can create an undesirable positive media contribution during weeks with no effective media. The notebook therefore uses a normalized, zero-anchored logistic transformation.
+The model uses logistic saturation to represent diminishing returns.
 
-The function is normalized so:
+A standard logistic can imply a positive response at zero input.
 
+The notebook therefore uses a normalized, **zero-anchored** version so that:
+
+```text
 Saturation(0) = 0
-
-and the transformed response approaches 1 at sufficiently high input.
+```
 
 Conceptually:
 
-[
-S(x) = \frac{L(x)-L(0)}{1-L(0)}
-]
+$$
+S(x)=\frac{L(x)-L(0)}{1-L(0)}
+$$
 
-where L(x) is the ordinary logistic function.
+where \(L(x)\) is the ordinary logistic function.
 
-The transformed value is clipped to the [0, 1] interval.
+The transformed value is clipped to `[0, 1]`.
 
-Saturation parameterization
+### Tuning Grid
 
-During tuning, the notebook derives a baseline midpoint from the median positive adstock and a baseline steepness from the interquartile range:
+The transformation tuning explores:
 
-[
-k_{base} = \frac{2\ln(3)}{IQR}
-]
+* `alpha`: `0.00, 0.20, 0.40, 0.60, 0.80`
+* saturation midpoint multiplier: `0.75, 1.00, 1.25`
+* saturation slope multiplier: `0.50, 1.00, 2.00, 4.00`
 
-The candidate grid varies:
+Reference statistics used by saturation are recomputed inside each training fold during rolling validation.
 
-alpha: 0.00, 0.20, 0.40, 0.60, 0.80
+---
 
-saturation midpoint multiplier: 0.75, 1.00, 1.25
+## 8.4 Price Control
 
-saturation slope multiplier: 0.50, 1.00, 2.00, 4.00
+`AVG_Price_Per_kgs` is retained as a demand control.
 
-Crucially, saturation reference statistics are recalculated inside each training fold during rolling cross-validation, so validation rows do not affect the transformation parameters.
+The modeled price variable is centered using a training-referenced mean:
 
-12. Price Treatment
+$$
+Price\_Centered = Price - Mean(Price_{training})
+$$
 
-AVG_Price_Per_kgs is retained as a demand control.
+Inner validation folds use fold-specific training means.
 
-The modeling version is centered using a training-referenced mean:
+---
 
-[
-Price_Centered = Price - Mean(Price_{training})
-]
+## 8.5 Trend and Seasonality
 
-For inner rolling validation, the mean is recalculated using only the rows belonging to that fold's training portion.
+The trend is deterministic:
 
-This prevents future price observations from influencing the transformation.
+```text
+Trend = Week - first observed Week
+```
 
-13. Leakage-Safe Model Tuning
+The notebook can include Fourier seasonal controls such as:
 
-The notebook separates model tuning from final holdout evaluation.
+* `Fourier_Sin_1`
+* `Fourier_Cos_1`
 
-Outer split
+Legacy names such as `Sin_52` and `Cos_52` are also accommodated when available.
 
-The data is split chronologically:
+---
 
-first 80% = development/training period;
+# 9. 📐 OLS MMM Specification
 
-final 20% = untouched holdout period.
+The model uses an intercept plus the five saturated media-family variables and available controls.
 
-No holdout observation is used to tune the transformation parameters or fit the development model.
+## Media Block
 
-Inner rolling validation
-
-Within the development period, the notebook creates chronological validation folds. The configured fold endpoints are based on:
-
-55% of development period
-70% of development period
-85% of development period
-
-with the validation length set to approximately 10% of the development period and never allowed to cross into the final holdout.
-
-Candidate grid
-
-Adstock and saturation are evaluated through a grid of candidate parameters. For each candidate configuration and fold:
-
-transform the media using the candidate adstock;
-
-learn saturation reference statistics from the fold's training rows only;
-
-apply the frozen saturation parameters to the validation rows;
-
-center price using the fold's training mean only;
-
-fit OLS on the fold's training rows;
-
-calculate validation RMSE.
-
-The selected parameters are those associated with the strongest chronological validation performance according to the notebook's tuning procedure.
-
-14. OLS MMM Specification
-
-The final OLS predictor set consists of the five saturated media-family variables plus available controls.
-
-The media predictors are:
-
+```text
 Print_Saturated
 TV_Saturated
 Meta_Saturated
 Instagram_Saturated
 YouTube_Saturated
+```
 
-The control block can include:
+## Control Block
 
-Price_Mean_Centered
+Depending on available columns, controls can include:
 
-holiday variables beginning with Holiday_
+* `Price_Mean_Centered`
+* `Holiday_*`
+* `Promotion_*`
+* `TradePromo_*`
+* `Trend_Centered`
+* `Trend`
+* `Fourier_Sin_1`
+* `Fourier_Cos_1`
+* legacy Fourier names when present
 
-promotion variables beginning with Promotion_
+The model is fitted with `statsmodels` OLS and an intercept.
 
-trade-promotion variables beginning with TradePromo_
+---
 
-Trend_Centered or Trend
+# 10. 🧪 Time-Series Validation
 
-Fourier_Sin_1 and Fourier_Cos_1 (or the legacy Sin_52 / Cos_52 naming when available)
+## 10.1 Outer Split
 
-The exact final set is generated programmatically from columns that exist in the modeling data.
+The notebook uses a chronological split:
 
-The regression is estimated using statsmodels OLS with an intercept.
+```text
+First 80%  → Development / Training
+Final 20%  → Untouched Holdout
+```
 
-15. Genuine Holdout Validation
+The final holdout is not used for transformation tuning or development-model fitting.
 
-The development OLS is fitted only on the first 80% of observations.
+---
 
-It is then used to predict the final 20% without any refitting on those rows.
+## 10.2 Inner Rolling Cross-Validation
+
+Within the development period, chronological validation folds are created around:
+
+```text
+55% of development data
+70% of development data
+85% of development data
+```
+
+with an approximately 10% validation length, while never crossing into the final holdout.
+
+---
+
+## 10.3 What Happens Inside Each Fold
+
+For every candidate transformation and fold:
+
+1. Apply candidate adstock.
+2. Learn saturation statistics from training rows only.
+3. Freeze saturation parameters.
+4. Center price using the fold's training mean.
+5. Fit OLS on the fold's training rows.
+6. Predict the chronological validation block.
+7. Record validation RMSE.
+
+The selected transformation is determined from this chronological development process.
+
+---
+
+## 10.4 Final Holdout Metrics
 
 The notebook reports:
 
-RMSE;
-
-MAE;
-
-MAPE;
-
-WAPE.
-
-It also produces actual-vs-predicted and residual diagnostics.
+* **RMSE** — Root Mean Squared Error
+* **MAE** — Mean Absolute Error
+* **MAPE** — Mean Absolute Percentage Error
+* **WAPE** — Weighted Absolute Percentage Error
 
 The holdout is the notebook's genuine evidence of out-of-sample predictive performance.
 
-Important interpretation rule
+---
 
-The full-history model created later in the notebook must not be described as an out-of-sample model. It is a historical refit performed after the validation gate.
+# 11. 🧩 Historical Attribution & Contribution
 
-16. Coefficient-Direction Audit
+After the validation gate, the notebook refits the locked specification using all available history.
 
-The notebook performs a diagnostic review of model coefficient directions.
+The resulting object is:
 
-This audit is intended to identify:
-
-negative media coefficients;
-
-unexpected price direction;
-
-other signs that warrant business or modeling investigation.
-
-The notebook does not force coefficients to expected signs merely because a sign is inconvenient. A coefficient sign is treated as a diagnostic result that should be investigated in light of data coverage, collinearity, specification, and business context.
-
-17. Historical Full-Data Refit
-
-After transformation/model specification selection and holdout evaluation, the notebook refits the locked specification on all available history.
-
-The object is:
-
+```python
 full_data_ols_model
+```
 
-This historical refit is then used for:
+This historical model supports:
 
-weekly contribution decomposition;
+* weekly contribution decomposition;
+* fiscal-year contribution summaries;
+* incremental sales;
+* incremental revenue;
+* ROAS;
+* response curves;
+* budget optimization.
 
-fiscal-year contribution summaries;
+## Media Contribution
 
-incremental sales;
+For media family \(j\):
 
-incremental revenue;
+$$
+Media\ Contribution_t
+=
+SaturatedMedia_t
+\times
+OLS\ Beta_j
+$$
 
-ROAS;
+The decomposition is reconciled against the model's fitted sales prediction.
 
-response curves;
+> **Governance note:** This full-history refit is a historical/business-analysis model. It must not be presented as the source of the notebook's holdout-validation claim.
 
-budget optimization.
+---
 
-This model is intentionally separated from the holdout-performance claim.
+# 12. 💰 Incremental Sales, Revenue & ROAS
 
-18. Contribution Decomposition
+## Incremental Sales
 
-The notebook calculates media contribution using the fitted full-history OLS coefficients and the corresponding saturated media variables.
+The MMM reports media-attributed incremental sales in kilograms.
 
-For a given media family:
+## Revenue Translation
 
-SaturatedMedia_t \times OLS\ Beta
-]
+Fiscal-year average realized price is:
 
-The media contribution outputs are combined with controls and baseline-related components so that the decomposition can be reconciled to the model's predicted sales.
-
-Outputs are produced at weekly and fiscal-year levels.
-
-19. Incremental Revenue and ROAS
-
-Incremental sales
-
-The MMM produces media-attributed incremental sales in kilograms.
-
-Revenue translation
-
-The notebook uses actual sales-value data from the sales source to derive revenue translations.
-
-For fiscal-year reporting, average realized price is calculated as:
-
+$$
+FY\ Average\ Price
+=
 \frac{FY\ Sales\ Value}{FY\ Sales\ Volume}
-]
+$$
 
-Incremental media revenue is then:
+Incremental media revenue is:
 
+$$
+Incremental\ Media\ Revenue
+=
 Incremental\ Media\ Sales
 \times
 FY\ Average\ Price
-]
+$$
 
-ROAS
+## ROAS
 
-For a media family:
+For media family \(j\):
 
-\frac{Incremental\ Media\ Revenue}{Media\ Spend}
-]
+$$
+ROAS_j
+=
+\frac{Incremental\ Media\ Revenue_j}
+{Media\ Spend_j}
+$$
 
-If spend is zero, ROAS is undefined and is represented as NaN rather than forcing an artificial value.
+When spend is zero, ROAS is left as `NaN` rather than forcing a value.
 
 ROAS is available at:
 
-weekly level;
+* weekly level;
+* fiscal-year level;
+* family level;
+* total-media level;
+* overall FY23–FY25 level.
 
-fiscal-year level;
+---
 
-media-family level;
+# 13. 📈 Response Curves
 
-total-media level;
+The response-curve layer makes the model's nonlinear media response visible.
 
-overall FY23–FY25 level.
-
-20. Response Curves
-
-The response-curve layer translates the fitted media transformation into modeled incremental response as media activity increases.
-
-The response follows the same conceptual chain used in the MMM:
-
-Media input
+```text
+Media Input
     ↓
-Geometric adstock
+Geometric Adstock
     ↓
-Zero-anchored logistic saturation
+Zero-Anchored Logistic Saturation
     ↓
-OLS media coefficient
+OLS Media Coefficient
     ↓
-Modeled incremental sales
+Modeled Incremental Sales
     ↓
-Revenue translation
+Revenue Translation
+```
 
-The curves are intended to show the shape of modeled response and the presence of diminishing returns rather than to imply that every point on the curve is equally supported by observed data.
+## Interpretation
 
-21. Budget Optimization — Methodology
+Response curves are primarily used to understand:
 
-Budget optimization is implemented as the final stage of the notebook.
+* carryover effects;
+* diminishing returns;
+* response shape;
+* relative behavior of the five media families.
 
-21.1 Objective
+They should not be interpreted as equally reliable at every spend level.
 
-The optimizer reallocates the current historical average weekly media budget across the five media families:
+Areas far outside the observed historical range are more extrapolative.
 
-Print
+---
 
-TV
+# 14. 🚀 Budget Optimization
 
-Meta
+Budget optimization is the final analytical layer of the notebook.
 
-Instagram
+## Optimization Goal
 
-YouTube
+> **Reallocate a fixed weekly media budget across the five media families to maximize modeled incremental media revenue.**
 
-The objective is:
+Media families optimized:
 
-[
-\max \sum_j Incremental\ Revenue_j
-]
+* Print
+* TV
+* Meta
+* Instagram
+* YouTube
 
-subject to:
-
-[
-\sum_j Spend_j = Current\ Total\ Weekly\ Budget
-]
-
-and:
-
-[
-0 \le Spend_j \le 1.25 \times Historical\ Max\ Weekly\ Spend_j
-]
-
-The 1.25× cap is an explicit extrapolation guard. It limits the optimizer from allocating materially more spend to a family than the observed historical range supports.
-
-21.2 Why the optimizer does not simply rank ROAS
+## Why Optimization Is Not a Simple ROAS Ranking
 
 Historical ROAS is an average efficiency measure over observed spend.
 
-A budget optimizer must ask a different question:
+Optimization asks a different question:
 
-What is the modeled incremental revenue generated by the next unit of spend at the proposed spending level?
+> **What is the modeled incremental value of the next unit of spend at the proposed allocation?**
 
-Because the model contains saturation, the incremental return changes as spend changes. A family with a strong historical ROAS may not remain equally efficient as additional spend is added.
+Because the model contains saturation, marginal return changes as spend increases.
 
-Therefore, the optimizer uses the nonlinear response implied by the fitted adstock, saturation, and OLS coefficient.
+Therefore, the optimizer evaluates the nonlinear response rather than mechanically assigning all budget to the historically highest-average-ROAS family.
 
-22. Spend-to-Input Bridge
+---
 
-The MMM is fit to transformed media inputs, while optimization decisions are expressed in INR spend. The notebook therefore creates a historical family-level bridge between the two.
+# 15. 🔗 Spend-to-Input Bridge
 
-For each family it estimates a through-origin relationship:
+The MMM is trained on transformed media inputs, while the budget decision is expressed in INR spend.
 
-[
-Model\ Input \approx Spend_{INR} \times InputPerINR
-]
+The notebook therefore estimates a historical bridge:
 
-The slope is learned from all overlapping historical weeks with positive spend.
+$$
+Model\ Input
+\approx
+Spend_{INR}
+\times
+InputPerINR
+$$
 
-The notebook records:
+For each family, the optimizer records:
 
-historical weeks with spend;
+* historical weeks with spend;
+* total historical spend;
+* total historical model input;
+* `Input_Per_INR`;
+* through-origin bridge R².
 
-total historical spend;
+A non-positive bridge slope causes the optimization stage to stop rather than produce an unreliable allocation.
 
-total historical model input;
+## Planning Assumption
 
-Input_Per_INR;
+The bridge assumes the historical spend-to-input relationship remains informative for the planning scenario.
 
-through-origin bridge R².
+---
 
-A non-positive bridge slope causes the optimizer to stop rather than produce a meaningless allocation.
+# 16. 🎯 Optimization Objective & Constraints
 
-This bridge is a planning approximation: it assumes the historical relationship between spend and media input remains useful for planning the optimized allocation.
+## 16.1 Spend → Input
 
-23. Optimization Response Function
+For media family \(j\):
 
-For each media family, the optimizer performs the following calculation:
+$$
+Weekly\ Input_j
+=
+Spend_j
+\times
+InputPerINR_j
+$$
 
-Step 1 — Spend to weekly media input
+## 16.2 Input → Steady-State Adstock
 
-Spend \times InputPerINR
-]
+For constant weekly planning spend:
 
-Step 2 — Convert to steady-state adstock
+$$
+SteadyState\ Adstock_j
+=
+\frac{Weekly\ Input_j}{1-\alpha_j}
+$$
 
-The planning response uses a constant-spend steady-state representation:
+## 16.3 Adstock → Saturation
 
-\frac{Weekly\ Input}{1-\alpha}
-]
+The steady-state adstock is passed through the same locked zero-anchored logistic saturation function.
 
-This is the infinite-horizon solution of the geometric adstock recursion under constant weekly input.
+## 16.4 Saturation → Incremental Sales
 
-Step 3 — Apply the same logistic saturation
+$$
+Incremental\ Sales_j
+=
+OLS\ Beta_j
+\times
+Saturation_j
+$$
 
-The steady-state adstock is passed through the notebook's locked zero-anchored logistic saturation function using the fitted family-specific k and x0 parameters.
+## 16.5 Sales → Revenue
 
-Step 4 — Apply the fitted OLS media coefficient
+A common historical weighted-average planning price is:
 
-OLS\ Beta \times Saturation
-]
-
-Step 5 — Translate incremental sales to revenue
-
-The optimizer uses one common historical weighted average planning price:
-
-\frac{Total\ Sales\ Value}{Total\ Sales\ Volume}
-]
+$$
+Planning\ Price
+=
+\frac{Total\ Sales\ Value}
+{Total\ Sales\ Volume}
+$$
 
 Then:
 
-Incremental\ Sales \times Planning\ Price
-]
+$$
+Incremental\ Revenue_j
+=
+Incremental\ Sales_j
+\times
+Planning\ Price
+$$
 
-The common price is a translation scalar; therefore, within the fixed-budget allocation problem, it does not change the relative allocation that maximizes modeled incremental sales/revenue.
+## 16.6 Optimization Problem
 
-24. Optimization Algorithm
+$$
+\boxed{
+\max_{s_1,\dots,s_J}
+\sum_j
+Incremental\ Revenue_j(s_j)
+}
+$$
 
-The notebook uses SciPy's constrained numerical optimizer with the SLSQP method.
+subject to:
 
-Initialization
+$$
+\boxed{
+\sum_j s_j = B
+}
+$$
 
-The starting allocation is the historical average weekly spend by family.
+and:
 
-Constraints
+$$
+\boxed{
+0
+\le
+s_j
+\le
+1.25
+\times
+Historical\ Max\ Weekly\ Spend_j
+}
+$$
 
-Non-negative spend per family.
+where `B` is the current historical average total weekly media budget.
 
-Upper bound = 1.25× historical maximum weekly spend for that family.
+## 16.7 Numerical Optimizer
 
-Sum of optimized weekly spend must equal the historical average total weekly budget.
+The notebook uses SciPy's constrained optimizer with **SLSQP**.
 
-Feasibility check
+The optimizer:
 
-Before optimization, the notebook verifies that the sum of the allowed family upper bounds is large enough to accommodate the total planning budget.
+* starts from the current historical family-level average spend;
+* enforces non-negative spending;
+* enforces the 1.25× historical-maximum weekly spend cap;
+* preserves the fixed total weekly budget;
+* checks feasibility;
+* requires successful convergence before accepting the result.
 
-Convergence check
+---
 
-The optimizer must return a successful status. If it fails to converge, the notebook raises an error rather than silently accepting an unreliable allocation.
+# 17. ✅ Finalized Budget Result
 
-25. Finalized Budget Output
+The final notebook section is explicitly designed to produce a business-ready output:
 
-The final business-facing section is explicitly titled:
-
+```text
 FINALIZED MMM BUDGET OPTIMIZATION RESULT
+```
 
-It reports:
+## Top-Line Outputs
 
-Top-level totals
+The result reports:
 
-current average weekly media budget;
+* current average weekly media budget;
+* optimized weekly media budget;
+* 52-week annualized planning budget;
+* current-budget modeled incremental sales;
+* optimized modeled incremental sales;
+* modeled sales uplift per week and year;
+* current-budget modeled incremental revenue;
+* optimized modeled incremental revenue;
+* modeled revenue uplift per week and year;
+* current-budget scenario ROAS;
+* optimized scenario ROAS.
 
-optimized weekly media budget;
+## Family-Level Allocation Table
 
-annual planning budget using 52 weeks;
+The final allocation includes:
 
-current-budget modeled incremental sales;
+| Field                                 | Purpose                                       |
+| ------------------------------------- | --------------------------------------------- |
+| `Media_Family`                        | Business media family                         |
+| `Current_Avg_Weekly_Spend_INR`        | Historical average weekly spend               |
+| `Current_Budget_Share_%`              | Historical budget share                       |
+| `Optimized_Weekly_Spend_INR`          | Model-implied optimized weekly spend          |
+| `Optimized_Budget_Share_%`            | Optimized budget share                        |
+| `Spend_Change_INR_per_Week`           | Weekly rupee change vs. current               |
+| `Spend_Change_%`                      | Percentage change vs. current                 |
+| `Optimized_Annual_Spend_INR`          | 52-week annualized spend                      |
+| `Marginal_Revenue_per_Additional_INR` | Local modeled marginal revenue                |
+| `OLS_Beta`                            | Fitted media coefficient                      |
+| `Model_Response_Flag`                 | Indicates modeled response eligibility/status |
 
-optimized modeled incremental sales;
+## How to Read the Allocation
 
-modeled sales uplift per week and year;
+The final allocation should be interpreted as:
 
-current-budget modeled incremental revenue;
+> **The media-family spend mix that maximizes modeled incremental media revenue under the fixed-budget, response-function, and extrapolation constraints implemented in the notebook.**
 
-optimized modeled incremental revenue;
+It should **not** be interpreted as:
 
-modeled revenue uplift per week and year;
+* a guaranteed future sales result;
+* proof of causal lift independent of modeling assumptions;
+* a replacement for media buying judgment;
+* evidence that historical ROAS will remain constant as spend changes;
+* permission to exceed historical planning bounds without additional evidence.
 
-current-budget scenario ROAS;
+---
 
-optimized scenario ROAS.
+# 18. 🩺 Diagnostics & Model Governance
 
-Family-level allocation table
+The notebook includes a broad diagnostic layer covering:
 
-The final allocation table contains:
+* heteroskedasticity;
+* autocorrelation;
+* Ljung–Box residual structure;
+* Breusch–Pagan testing;
+* Breusch–Godfrey testing;
+* Durbin–Watson;
+* Jarque–Bera normality diagnostics;
+* VIF / multicollinearity;
+* influence and outlier diagnostics;
+* RESET-style linear specification checks.
 
-Media_Family
+## Coefficient-Direction Audit
 
-Current_Avg_Weekly_Spend_INR
+The notebook reviews:
 
-Current_Budget_Share_%
+* negative media coefficients;
+* unexpected price direction;
+* other coefficient-direction signals requiring investigation.
 
-Optimized_Weekly_Spend_INR
+It does **not** force coefficients to expected business signs simply because a sign is inconvenient.
 
-Optimized_Budget_Share_%
+A coefficient sign should be evaluated in context of:
 
-Spend_Change_INR_per_Week
+* data coverage;
+* collinearity;
+* model specification;
+* transformation choices;
+* business knowledge.
 
-Spend_Change_%
+---
 
-Optimized_Annual_Spend_INR
+# 19. 📦 Generated Outputs
 
-Marginal_Revenue_per_Additional_INR
+All major artifacts are written to the `mmm_outputs` directory.
 
-OLS_Beta
+## Core Modeling
 
-Model_Response_Flag
-
-The Marginal_Revenue_per_Additional_INR field is intended to show the local modeled incremental revenue associated with a further unit of spend at the optimized point.
-
-26. Interpreting the Final Recommendation
-
-The final allocation should be read as:
-
-The media-family spend mix that maximizes modeled incremental media revenue under the notebook's fixed-budget, response-function, and extrapolation constraints.
-
-It should not be interpreted as:
-
-a guarantee of future sales;
-
-a causal estimate immune to omitted-variable bias;
-
-a replacement for media buying judgment;
-
-proof that one channel will always outperform another;
-
-a recommendation to exceed the historical domain materially.
-
-The result is conditional on the fitted MMM, the spend-to-input bridge, the steady-state adstock assumption, the saturation function, and the planning-price translation.
-
-Particular caution is warranted for any family with:
-
-a weak spend-to-input bridge;
-
-a non-positive OLS media coefficient;
-
-limited active weeks;
-
-spend levels near or above the historical maximum;
-
-high uncertainty or unstable model diagnostics.
-
-27. Generated Output Files
-
-The notebook writes business-ready and audit-friendly CSV outputs under the mmm_outputs folder.
-
-Core modeling outputs
-
+```text
 Consumer Brand_MMM_Master_Numeric.csv
 Consumer Brand_MMM_Modeling_Base.csv
 Consumer Brand_MMM_Model_Base_Adstocked.csv
 Consumer Brand_MMM_Model_Base_Adstock_Saturated.csv
 Consumer Brand_MMM_Final_Adstock_Saturated_Tuned.csv
+```
 
-Contribution and incremental-sales outputs
+## Contribution & Incremental Sales
 
+```text
 Consumer Brand_MMM_Weekly_Contribution.csv
 Consumer Brand_MMM_FY23_FY24_FY25_Contribution.csv
 Consumer Brand_MMM_Total_Contribution_FY23_FY25.csv
 Consumer Brand_MMM_Weekly_Incremental_Sales_Revenue.csv
 Consumer Brand_MMM_FY23_FY24_FY25_Media_Incremental_Sales.csv
 Consumer Brand_MMM_FY23_FY24_FY25_Media_Incremental_Revenue.csv
+```
 
-Sales and ROAS outputs
+## Sales & ROAS
 
+```text
 Consumer Brand_MMM_FY23_FY24_FY25_Sales_Revenue_Summary.csv
 Consumer Brand_MMM_Weekly_Media_ROAS.csv
 Consumer Brand_MMM_Weekly_ROAS_Summary.csv
@@ -875,30 +981,40 @@ Consumer Brand_MMM_FY_Media_ROAS.csv
 Consumer Brand_MMM_FY23_FY24_FY25_Media_ROAS.csv
 Consumer Brand_MMM_Overall_FY23_FY25_Media_ROAS.csv
 Consumer Brand_MMM_FY23_FY24_FY25_Media_Spend.csv
+```
 
-Response-curve outputs
+## Response Curves
 
+```text
 Consumer Brand_MMM_Response_Curves.csv
 Consumer Brand_MMM_Response_Curve_Summary.csv
+```
 
-Model diagnostics
+## Diagnostics
 
+```text
 Consumer Brand_MMM_Actual_Predicted_Residuals.csv
+```
 
-Budget optimization outputs
+## Budget Optimization
 
+```text
 Consumer Brand_MMM_Budget_Optimization_Parameters.csv
 Consumer Brand_MMM_Optimized_Budget_Allocation.csv
 Consumer Brand_MMM_Spend_to_Input_Bridge.csv
 Consumer Brand_MMM_FINAL_Budget_Optimization_Result.csv
 Consumer Brand_MMM_FINAL_Budget_Optimization_Summary.csv
+```
 
-The two files beginning with FINAL_ are intended to be the easiest outputs for a business stakeholder to review.
+> ⭐ **Business users:** Start with the two files beginning with `FINAL_`.
 
-28. Recommended Project Structure
+---
 
-A clean project directory can be organized as:
+# 20. 📁 Project Structure
 
+Recommended structure:
+
+```text
 MMM_Project/
 │
 ├── MMM_Leakage_Safe_Case_Study_Finalized.ipynb
@@ -920,48 +1036,58 @@ MMM_Project/
     ├── Consumer Brand_MMM_Spend_to_Input_Bridge.csv
     ├── Consumer Brand_MMM_FINAL_Budget_Optimization_Result.csv
     └── Consumer Brand_MMM_FINAL_Budget_Optimization_Summary.csv
+```
 
-29. How to Run the Notebook
+---
 
-Step 1 — Place the files together
+# 21. ▶️ How to Run
 
-Keep the finalized notebook and all four required CSVs in the same directory.
+## Step 1 — Place the Files Together
 
-The notebook first checks the current working directory and then /mnt/data if the files are not found in the current directory.
+Keep the notebook and the four source CSVs in the same directory.
 
-Step 2 — Open the notebook
+The notebook checks the current working directory and then `/mnt/data` when searching for inputs.
 
-Run the notebook in Jupyter Notebook, JupyterLab, VS Code, or another compatible environment with the required Python libraries installed.
+## Step 2 — Open the Notebook
 
-Step 3 — Run cells sequentially
+Compatible environments include:
 
-The notebook is intentionally structured as a sequential pipeline. Run from the beginning through the validation and business-output sections.
+* Jupyter Notebook;
+* JupyterLab;
+* VS Code;
+* other standard Python/Jupyter environments.
 
-The budget optimization section depends on objects created earlier in the notebook and therefore should not be run in isolation.
+## Step 3 — Run Sequentially
 
-Step 4 — Review the validation gate
+Run the notebook from top to bottom.
 
-Before interpreting contributions or optimization results, review:
+Later business-output sections depend on objects created earlier.
 
-development-vs-holdout metrics;
+## Step 4 — Review the Validation Gate
 
-coefficient-direction diagnostics;
+Before using attribution or optimization outputs, review:
 
-model diagnostics;
+* development-vs-holdout performance;
+* coefficient-direction diagnostics;
+* model diagnostics;
+* the distinction between development model and full-history refit.
 
-the distinction between the development model and full-history historical refit.
+## Step 5 — Review Final Planning Outputs
 
-Step 5 — Review the final allocation
+The final business-facing results are saved to:
 
-The final business-facing output is generated in the final cell and saved to:
-
+```text
 mmm_outputs/Consumer Brand_MMM_FINAL_Budget_Optimization_Result.csv
 mmm_outputs/Consumer Brand_MMM_FINAL_Budget_Optimization_Summary.csv
+```
 
-30. Python Dependencies
+---
 
-The notebook imports the following primary packages/modules:
+# 22. 🧰 Dependencies
 
+Primary packages/modules include:
+
+```text
 itertools
 pathlib
 numpy
@@ -971,57 +1097,71 @@ seaborn
 scipy
 scikit-learn
 statsmodels
+```
 
 The optimization layer additionally requires:
 
+```python
 from scipy.optimize import minimize
+```
 
-The notebook does not reinstall packages; it assumes the active Python environment already contains the required dependencies.
+The notebook assumes the active Python environment already contains the required dependencies.
 
-31. Key Notebook Objects
+---
 
-Several objects are intentionally named so that the notebook's layers can be audited or extended.
+# 23. 🔍 Key Notebook Objects
 
-Data objects
+## Data Objects
 
+```text
 sales_df_clean
 media_input_df_clean
 media_spend_df_clean
 promo_df_clean
 master_mmm_df
 media_spend_for_roas_df
+```
 
-Modeling objects
+## Modeling Objects
 
+```text
 model_base_df
 model_adstock_df
 model_saturation_df
 final_transformed_df
 final_ols_df
+```
 
-Validation/model objects
+## Validation / Model Objects
 
+```text
 validation_train_df
 validation_holdout_df
 final_ols_model
 full_data_ols_model
 holdout_metrics
 validation_summary_df
+```
 
-Transformation parameters
+## Transformation Parameters
 
+```text
 alpha_values
 saturation_parameters
+```
 
-Business outputs
+## Business Outputs
 
+```text
 weekly_contribution_df
 weekly_revenue_df
 weekly_roas_df
 response_curve_df
+```
 
-Optimization objects
+## Optimization Objects
 
+```text
 input_per_inr
 spend_input_bridge_df
 optimization_parameters_df
@@ -1031,259 +1171,284 @@ optimized_allocation
 budget_allocation_df
 final_budget_result_df
 final_summary_df
+```
 
-These names make it easier to inspect intermediate values without reverse-engineering the notebook.
+---
 
-32. Model Diagnostics and Statistical Review
+# 24. ⚙️ Assumptions
 
-The notebook includes a broad diagnostic layer after model fitting. The imported statistical utilities include tests and diagnostics for:
+## 24.1 Historical Relationships Remain Useful for Planning
 
-heteroskedasticity;
+The model assumes historical relationships provide useful information for the planning scenario.
 
-autocorrelation;
+## 24.2 Media Input Is a Valid Exposure / Activity Measure
 
-Ljung–Box residual structure;
+The MMM is fit on media inputs.
 
-Breusch–Pagan testing;
+Spend is connected to those inputs through the historical spend-to-input bridge used for optimization.
 
-Breusch–Godfrey testing;
+## 24.3 Geometric Adstock Adequately Represents Carryover
 
-Durbin–Watson;
+Carryover is modeled through geometric decay.
 
-Jarque–Bera normality diagnostics;
+## 24.4 Logistic Saturation Adequately Represents Diminishing Returns
 
-variance inflation factors (VIF);
+The response curve is constrained to the chosen zero-anchored logistic form.
 
-influence and outlier diagnostics;
+## 24.5 Historical Weighted-Average Price Is Sufficient for Revenue Translation
 
-linear specification checks such as RESET.
+Optimization uses a common historical price only to translate incremental kilograms into revenue.
 
-These diagnostics are intended to help determine whether the fitted OLS model is structurally adequate and whether individual coefficients should be interpreted cautiously.
+## 24.6 Steady-State Adstock Is Suitable for Planning
 
-Statistical diagnostics should be considered alongside business knowledge and data limitations rather than treated as automatic proof of causal validity.
+The optimizer evaluates a constant weekly spending scenario through steady-state adstock.
 
-33. Important Modeling Assumptions
+## 24.7 1.25× Cap Is an Extrapolation Guard
 
-The MMM and optimization depend on several assumptions.
+The family-level upper bound is a practical planning constraint designed to reduce excessive extrapolation.
 
-33.1 Historical relationships are informative for planning
+It is not a learned causal or business rule.
 
-The model assumes that the relationship learned from the historical data provides useful information for the planning scenario.
+---
 
-33.2 Media input is a valid exposure/activity measure
+# 25. ⚠️ Limitations
 
-The model uses media inputs as the primary media-side explanatory variables. Spend is connected to these variables only through the historical spend-to-input bridge used for optimization.
+## Causality
 
-33.3 Geometric adstock is an adequate carryover shape
+OLS association does not by itself establish causal lift.
 
-Media persistence is represented by geometric decay. Other carryover shapes could be implemented in a future model version.
+Confounding, omitted variables, targeting effects, reverse causality, and measurement error may influence coefficients.
 
-33.4 Logistic saturation captures diminishing returns sufficiently well
+## Collinearity
 
-The response is constrained to a zero-anchored logistic shape. More flexible saturation functions could be explored in a later model iteration.
+Coordinated media activity can create correlation among channels, making individual coefficients unstable.
 
-33.5 Constant planning price is sufficient for budget translation
+## Limited Experimental Identification
 
-Optimization uses a common historical weighted average price solely to convert incremental kilograms to incremental revenue. This does not model future price changes.
+This is not a randomized experiment.
 
-33.6 Steady-state adstock is suitable for planning
+Experimental or quasi-experimental evidence can strengthen causal interpretation.
 
-The optimizer converts constant weekly spend into steady-state adstock. It therefore evaluates a long-run constant-spend scenario rather than simulating a finite campaign ramp with week-by-week media pulses.
+## Aggregation Bias
 
-33.7 Upper spend caps improve planning robustness
+Campaign-level heterogeneity is compressed into family-level weekly variables.
 
-The 1.25× historical maximum weekly spend cap is a guard against excessive extrapolation. It is a pragmatic planning constraint, not a learned business rule.
+## Optimization Extrapolation
 
-34. Limitations
+The optimizer is bounded, but an optimized mix can still differ materially from an exact historical weekly allocation.
 
-This project is intentionally presented as a deterministic OLS MMM and should be interpreted within those limitations.
+## Deterministic Point Estimates
 
-Causality
+The current implementation produces point-estimate planning outputs rather than posterior distributions or probabilistic uncertainty intervals.
 
-OLS association does not automatically establish causal lift. Confounding, omitted variables, reverse causality, media targeting, and measurement error can affect coefficient estimates.
+## Steady-State Planning Simplification
 
-Collinearity
+The current budget optimization is based on steady-state adstock.
 
-Media channels may move together, especially when campaigns are planned in coordinated bursts. Collinearity can make individual media coefficients unstable even when overall model fit is strong.
+A finite-horizon stateful simulation would better represent ramp-up and carryover dynamics for campaign schedules.
 
-Limited experiment-based identification
+---
 
-The notebook is not a randomized experiment. Where possible, future work should incorporate experimental or quasi-experimental evidence to strengthen causal interpretation.
+# 26. 🛠️ Recommended Enhancements
 
-Aggregation bias
+## Bayesian Uncertainty Layer
 
-Media are aggregated into family-level weekly inputs. Campaign-level heterogeneity is therefore compressed.
+A PyMC-based extension could provide distributions for:
 
-Optimization extrapolation
+* media contributions;
+* ROAS;
+* incremental sales;
+* incremental revenue;
+* response curves;
+* optimized budget allocation.
 
-The optimizer is bounded, but it still makes a planning extrapolation beyond the exact historical allocation observed in some cases.
+## Scenario Planning
 
-Deterministic point estimates
+Add multiple planning budgets, for example:
 
-The current optimization is based on point estimates. It does not yet provide a posterior distribution or probabilistic range for the recommended allocation.
+```text
+-20%   Current   +10%   +20%
+```
 
-Full-history refit
+and compare allocation and modeled response.
 
-The historical refit is intentionally useful for attribution and optimization, but it should not be confused with the untouched holdout validation model.
+## Finite-Horizon Optimization
 
-35. Recommended Next Enhancements
+Simulate 13-, 26-, or 52-week spend paths explicitly, carrying adstock state week by week.
 
-The notebook's own roadmap identifies a Bayesian extension as the next major methodological stage.
+## Additional Business Constraints
 
-PyMC / uncertainty layer
+Potential future controls include:
 
-A Bayesian MMM could be added after the deterministic pipeline is stable so that the project can report distributions rather than only point estimates for:
+* minimum spends;
+* maximum budget shares;
+* channel commitments;
+* inventory constraints;
+* production constraints;
+* campaign-level caps;
+* business-defined guardrails.
 
-media contributions;
+---
 
-channel ROAS;
+# 27. ✅ Reproducibility Checklist
 
-incremental sales;
+Use this checklist before publishing or presenting the model.
 
-incremental revenue;
+* [ ] All four required CSVs are present.
+* [ ] Dates and weeks parse correctly.
+* [ ] No duplicate weekly keys exist.
+* [ ] Source week coverage is aligned.
+* [ ] The development/holdout split remains chronological.
+* [ ] The final 20% holdout is untouched during tuning.
+* [ ] Media scaling is learned from the development period only.
+* [ ] Price centering is training-referenced.
+* [ ] Saturation statistics are fold-specific during rolling CV.
+* [ ] Holdout predictions are generated without refitting on holdout rows.
+* [ ] Historical refit occurs only after the validation gate.
+* [ ] Contribution decomposition reconciles to fitted sales.
+* [ ] Spend aligns to the MMM weeks.
+* [ ] Spend-to-input bridge slopes are positive for optimized families.
+* [ ] Optimization is feasible under the family caps.
+* [ ] SLSQP converges successfully.
+* [ ] Optimized spend equals the fixed planning budget.
+* [ ] Final optimization CSVs are generated.
 
-response curves;
+---
 
-budget allocation.
+# 28. 🗣️ Business Presentation Framework
 
-Scenario planning
+A stakeholder presentation should follow this order.
 
-A future version could support several planning budgets, for example:
+## 1. Model Credibility
 
-- Current budget
-- +10%
-- +20%
-- -10%
-- -20%
+Start with the chronological validation design and untouched holdout.
 
-and compare the model-implied allocations and response across scenarios.
+## 2. Response Understanding
 
-Finite-horizon budget simulation
+Explain:
 
-Rather than only using steady-state adstock, a future optimizer could simulate a full 13-, 26-, or 52-week schedule and account for carryover explicitly week by week.
+* adstock;
+* carryover;
+* saturation;
+* diminishing returns.
 
-Additional business constraints
+## 3. Historical Efficiency
 
-The optimizer could later include:
+Review incremental revenue and ROAS by family and fiscal year.
 
-minimum spends;
+## 4. Planning Implication
 
-maximum spend shares;
+Present the optimized fixed-budget allocation.
 
-channel commitments;
+## 5. Sensitivity and Caveats
 
-production constraints;
+Explain that the optimization is conditional on the MMM and should be monitored against future actual performance.
 
-media inventory constraints;
+### Recommended Stakeholder Statement
 
-campaign-specific caps;
+> The finalized MMM converts historical weekly media, promotion, price, trend, and seasonality data into a leakage-safe OLS response model. After genuine out-of-sample validation, the locked specification is refit on all history for attribution and planning. The budget optimizer reallocates the historical average weekly media budget across Print, TV, Meta, Instagram, and YouTube using the fitted adstock and saturation response, while limiting extrapolation to 1.25× each family's historical maximum weekly spend. The resulting allocation is a model-implied planning scenario, not a guaranteed causal outcome.
 
-business-defined guardrails.
+---
 
-36. Governance and Publication Note
+# 29. 🧾 Final Interpretation
 
-The notebook is a portfolio/case-study edition and explicitly notes that source data and client-specific campaign files are not included.
+The final optimization answer should be summarized in three layers.
 
-Before publishing the project, confirm employer/client confidentiality requirements regarding:
+## A. Current State
 
-real data;
+What is the existing weekly spend by family?
 
-derived performance metrics;
+How is the current budget distributed?
 
-brand identifiers;
+## B. Optimized State
 
-campaign names;
+How does the model reallocate that same total weekly budget across:
 
-screenshots;
+* Print;
+* TV;
+* Meta;
+* Instagram;
+* YouTube?
 
-spend levels;
+## C. Modeled Business Impact
 
-contribution values;
+What does the fitted response function imply for:
 
-ROAS values;
+* incremental sales;
+* incremental revenue;
+* budget share change;
+* marginal revenue;
+* scenario ROAS?
 
-model coefficients.
+### ⚠️ Final Decision Framework
 
-Do not publish confidential business information merely because it appears in a generated output file.
+The optimization result is a **model-implied planning scenario**.
 
-37. Reproducibility Checklist
+It should be used together with:
 
-Before considering a run complete, verify the following:
+* validation performance;
+* coefficient stability;
+* statistical diagnostics;
+* spend-to-input bridge quality;
+* historical support for the optimized spend range;
+* business constraints;
+* future test-and-learn evidence.
 
-All four required CSV files are present.
+---
 
-Dates and week identifiers parse correctly.
+# 30. 📦 Deliverables
 
-No duplicate weekly keys exist.
+## Primary Notebook
 
-Week coverage is aligned across source datasets.
-
-The development/holdout split remains chronological.
-
-The final 20% holdout is not used during tuning.
-
-Media scaling is learned from the development period only.
-
-Price centering is training-referenced.
-
-Saturation reference statistics are fold-specific during rolling CV.
-
-The development model is evaluated on the untouched holdout without refitting.
-
-The historical full-data refit is performed only after validation.
-
-Media contributions reconcile with the model's predicted sales decomposition.
-
-Spend successfully matches all MMM weeks for ROAS.
-
-The spend-to-input bridge is positive for every optimized family.
-
-The optimization problem is feasible under the 1.25× family caps.
-
-The SLSQP optimizer converges successfully.
-
-The optimized total spend equals the current total weekly planning budget.
-
-The final optimization CSVs are generated successfully.
-
-38. Final Business Interpretation Framework
-
-When presenting the results to a stakeholder, the recommended narrative is:
-
-Model credibility — start with the chronological validation design and untouched holdout rather than leading with attribution numbers.
-
-Response understanding — explain media contribution, carryover, and diminishing returns.
-
-Efficiency — review historical incremental revenue and ROAS by media family and fiscal year.
-
-Planning — show the optimized allocation under the fixed-budget constraint.
-
-Sensitivity and caveats — explain that the allocation is conditional on the fitted MMM and should be monitored against future actual performance.
-
-A concise business statement is:
-
-The finalized MMM converts historical weekly media, promotion, price, trend, and seasonality data into a leakage-safe OLS response model. After genuine out-of-sample validation, the locked specification is refit on all history for attribution and planning. The budget optimizer then reallocates the historical average weekly media budget across Print, TV, Meta, Instagram, and YouTube using the fitted adstock and saturation response, while limiting extrapolation to 1.25× each family's historical maximum weekly spend. The resulting allocation is a model-implied planning scenario, not a guaranteed causal outcome.
-
-39. Final Deliverable
-
-The primary technical deliverable is:
-
+```text
 MMM_Leakage_Safe_Case_Study_Finalized.ipynb
+```
 
-The primary documentation deliverable is:
+## Primary README
 
+```text
 README_MMM_Leakage_Safe_Case_Study.md
+```
 
-The primary business-facing optimization outputs are:
+## Primary Optimization Outputs
 
+```text
 mmm_outputs/Consumer Brand_MMM_FINAL_Budget_Optimization_Result.csv
 mmm_outputs/Consumer Brand_MMM_FINAL_Budget_Optimization_Summary.csv
+```
 
-Together, these provide the reproducible modeling workflow, validation framework, business attribution layer, and final budget-planning output.
+## Supporting Optimization Outputs
 
-40. Version Note
+```text
+mmm_outputs/Consumer Brand_MMM_Budget_Optimization_Parameters.csv
+mmm_outputs/Consumer Brand_MMM_Optimized_Budget_Allocation.csv
+mmm_outputs/Consumer Brand_MMM_Spend_to_Input_Bridge.csv
+```
 
-This README documents the finalized notebook structure and optimization methodology as currently implemented in the supplied case-study notebook.
+---
 
-The notebook is designed so that the actual numerical budget allocation, modeled revenue uplift, ROAS, and channel-level recommendations are calculated from the supplied source data when the notebook is executed end to end.
+# 🏁 Final Project Statement
 
+> **This case study demonstrates a complete leakage-safe weekly MMM workflow: structured data preparation → family-level media modeling → causal-safe transformation handling → chronological rolling validation → untouched holdout evaluation → historical contribution and ROAS → nonlinear response curves → constrained fixed-budget optimization.**
+
+The key methodological principle is simple:
+
+> **Do not let future information influence model choices, transformation parameters, or validation.**
+
+The key business principle is equally important:
+
+> **Optimize on modeled marginal response and diminishing returns — not on historical average ROAS alone.**
+
+---
+
+# 🔖 Version Note
+
+This README documents the finalized notebook structure and optimization methodology supplied with the case study.
+
+Numerical allocation, modeled revenue uplift, ROAS, and channel-level planning values are generated from the source data when the notebook is executed end to end.
+
+---
+
+<p align="center">
+  <strong>Marketing Mix Modeling • Leakage-Safe Validation • Response Curves • Budget Optimization</strong>
+</p>
